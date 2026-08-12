@@ -1,11 +1,48 @@
-<div align="center">
+# SUPERPANEL - SMM & Digital Services Platform
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+Full-stack SMM Services and Virtual Number Verification Web Application built with React, Vite, Tailwind CSS, Express, and PostgreSQL.
 
-  <h1>Built with AI Studio</h2>
+---
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## 🚀 How to Upload to GitHub & Deploy to Netlify
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+### Step 1: Upload Code to GitHub
+1. Open your terminal in the project folder or export the repository from AI Studio.
+2. Initialize Git (if not already initialized) and make a commit:
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit - SuperPanel App"
+   ```
+3. Create a new repository on [GitHub](https://github.com/new).
+4. Link your remote repository and push your code:
+   ```bash
+   git remote add origin https://github.com/YOUR_USERNAME/superpanel.git
+   git branch -M main
+   git push -u origin main
+   ```
 
-</div>
+---
+
+### Step 2: Deploy to Netlify
+1. Log into [Netlify](https://app.netlify.com/).
+2. Click **Add new site** -> **Import an existing project**.
+3. Select **GitHub** and authorize Netlify.
+4. Choose your `superpanel` repository.
+5. Netlify will automatically detect the settings from `netlify.toml`:
+   - **Build command:** `npm run build`
+   - **Publish directory:** `dist`
+6. Click **Deploy superpanel**.
+
+---
+
+## 📄 Included Netlify Configuration Files
+- `netlify.toml`: Directs Netlify to use `npm run build` and publish `dist`, handling SPA single-page routing redirect rules (`/*` -> `/index.html`).
+- `public/_redirects`: Backup redirect rule for SPA routing.
+- `.gitignore`: Prevents temporary data, build artifacts, and secrets from being committed.
+
+---
+
+## 🔐 Admin Credentials
+- **Username / Email:** `Abdullah231` (or `abdullah231@superpanel.com`)
+- **Password:** `Abdullah@231`

@@ -1,0 +1,158 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User profiles and wallet balance",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "walletBalance": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "name", "email", "role", "walletBalance", "status"]
+    },
+    "services": {
+      "title": "Services",
+      "description": "Digital services offered on SuperPanel",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["Buy Account", "Virtual Numbers", "Social Media Services", "Digital Services"] },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "stock": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "icon": { "type": "string" },
+        "isApiBacked": { "type": "boolean" },
+        "apiProvider": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "category", "description", "price", "stock", "status"]
+    },
+    "orders": {
+      "title": "Orders",
+      "description": "Service purchase orders",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "userId": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "serviceName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "processing", "completed", "cancelled", "refunded", "failed"] },
+        "externalOrderId": { "type": "string" },
+        "externalStatus": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["orderId", "userId", "serviceId", "serviceName", "quantity", "unitPrice", "totalAmount", "status"]
+    },
+    "deposits": {
+      "title": "Deposits",
+      "description": "Wallet deposit requests via JazzCash / SadaPay",
+      "type": "object",
+      "properties": {
+        "depositId": { "type": "string" },
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["JazzCash", "SadaPay"] },
+        "receiverNumber": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "screenshotUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "reviewedAt": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "rejectionReason": { "type": "string" }
+      },
+      "required": ["depositId", "userId", "amount", "paymentMethod", "transactionId", "senderName", "status"]
+    },
+    "transactions": {
+      "title": "Transactions",
+      "description": "Wallet transaction history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["deposit", "purchase", "refund", "adjustment"] },
+        "amount": { "type": "number" },
+        "balanceBefore": { "type": "number" },
+        "balanceAfter": { "type": "number" },
+        "description": { "type": "string" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "userId", "type", "amount", "balanceBefore", "balanceAfter", "description", "date"]
+    },
+    "supportTickets": {
+      "title": "Support Tickets",
+      "description": "Customer support tickets and chat messages",
+      "type": "object",
+      "properties": {
+        "ticketId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "subject": { "type": "string" },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High"] },
+        "status": { "type": "string", "enum": ["Open", "Pending", "Resolved"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "senderId": { "type": "string" },
+              "senderName": { "type": "string" },
+              "senderRole": { "type": "string" },
+              "text": { "type": "string" },
+              "createdAt": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["ticketId", "userId", "subject", "priority", "status", "messages"]
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "In-app user notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "type": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "message", "read", "createdAt"]
+    },
+    "paymentMethods": {
+      "title": "Payment Methods",
+      "description": "JazzCash and SadaPay configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "accountNumber": { "type": "string" },
+        "accountName": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "enabled", "accountNumber", "accountName"]
+    }
+  }
+}

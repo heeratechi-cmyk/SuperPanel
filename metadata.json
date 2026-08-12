@@ -1,0 +1,6 @@
+{
+  "name": "SuperPanel",
+  "description": "SuperPanel by Climax Production - Complete SMM & Digital Services Dashboard with Wallet, Deposits, Orders and Support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

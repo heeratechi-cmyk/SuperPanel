@@ -8,9 +8,11 @@ interface AuthContextType {
   toasts: ToastMessage[];
   pendingOtpEmail: string | null;
   setPendingOtpEmail: (email: string | null) => void;
+  pendingOtpUsername: string | null;
+  setPendingOtpUsername: (username: string | null) => void;
   addToast: (text: string, type?: 'success' | 'error' | 'info') => void;
   removeToast: (id: string) => void;
-  signup: (email: string, pass: string, name: string) => Promise<void>;
+  signup: (email: string, pass: string, name: string, username?: string) => Promise<void>;
   login: (email: string, pass: string) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -28,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [pendingOtpEmail, setPendingOtpEmail] = useState<string | null>(null);
+  const [pendingOtpUsername, setPendingOtpUsername] = useState<string | null>(null);
 
   const addToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
     const id = Date.now().toString() + Math.random().toString().substring(2, 5);
@@ -62,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const profile: UserProfile = {
           uid: u.id,
           name: u.name,
+          username: u.username || u.name,
           email: u.email,
           role: u.role === 'ADMIN' ? 'admin' : 'user',
           walletBalance: u.walletBalance,
@@ -72,7 +76,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           updatedAt: new Date().toISOString(),
         };
         setUserProfile(profile);
+        if (!u.emailVerified) {
+          setPendingOtpEmail(u.email);
+          setPendingOtpUsername(u.username || u.name);
+        }
       } else {
+        if (res.status === 401) {
+          localStorage.removeItem('superpanel_session');
+        }
         setUserProfile(null);
       }
     } catch (err) {
@@ -86,12 +97,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     checkAuth();
   }, []);
 
-  const signup = async (email: string, pass: string, name: string) => {
+  const signup = async (email: string, pass: string, name: string, username?: string) => {
     try {
+      const rawUsername = (username || name).toString().trim();
+      const cleanUsername = rawUsername.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_.-]/g, '');
+
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password: pass })
+        body: JSON.stringify({ name, username: cleanUsername, email, password: pass })
       });
 
       const data = await res.json();
@@ -103,11 +117,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('superpanel_session', data.token);
       }
 
+      const assignedUsername = data.username || cleanUsername || name;
+
       if (data.user) {
         const u = data.user;
         const profile: UserProfile = {
           uid: u.id,
           name: u.name,
+          username: u.username || assignedUsername,
           email: u.email,
           role: u.role === 'ADMIN' ? 'admin' : 'user',
           walletBalance: u.walletBalance || 0,
@@ -121,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       setPendingOtpEmail(email.trim().toLowerCase());
+      setPendingOtpUsername(assignedUsername);
       addToast(data.message || `Account created! Verification code sent to ${email}`, 'success');
     } catch (err: any) {
       addToast(err.message || 'Registration failed.', 'error');
@@ -149,6 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const profile: UserProfile = {
         uid: u.id,
         name: u.name,
+        username: u.username || u.name,
         email: u.email,
         role: u.role === 'ADMIN' ? 'admin' : 'user',
         walletBalance: u.walletBalance,
@@ -160,6 +179,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
 
       setUserProfile(profile);
+      if (!u.emailVerified) {
+        setPendingOtpEmail(u.email);
+        setPendingOtpUsername(u.username || u.name);
+      }
       addToast('Welcome back to SuperPanel!', 'success');
     } catch (err: any) {
       addToast(err.message || 'Login failed.', 'error');
@@ -195,6 +218,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const profile: UserProfile = {
         uid: u.id,
         name: u.name,
+        username: u.username || u.name,
         email: u.email,
         role: u.role === 'ADMIN' ? 'admin' : 'user',
         walletBalance: u.walletBalance,
@@ -207,6 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUserProfile(profile);
       setPendingOtpEmail(null);
+      setPendingOtpUsername(null);
       addToast('OTP verified successfully! Welcome to SuperPanel.', 'success');
       return true;
     } catch (err: any) {
@@ -230,6 +255,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!data.success) {
         addToast(data.message || 'Failed to resend OTP.', 'error');
       } else {
+        if (data.username) {
+          setPendingOtpUsername(data.username);
+        }
         addToast(data.message || 'Fresh OTP code sent!', 'info');
       }
     } catch (err: any) {
@@ -246,6 +274,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('superpanel_session');
     setUserProfile(null);
     setPendingOtpEmail(null);
+    setPendingOtpUsername(null);
     addToast('Logged out successfully', 'info');
   };
 
@@ -341,6 +370,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         toasts,
         pendingOtpEmail,
         setPendingOtpEmail,
+        pendingOtpUsername,
+        setPendingOtpUsername,
         addToast,
         removeToast,
         signup,

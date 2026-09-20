@@ -75,8 +75,8 @@ export async function seedDatabase() {
   await pg.query('DELETE FROM "User" WHERE email = $1 OR email = $2', ['demo@superpanel.com', 'admin@superpanel.com']);
 
   const defaultAccounts = [
-    { email: 'abdullah231@superpanel.com', name: 'Abdullah231', pass: 'Abdullah@231', role: 'ADMIN', balance: 5000.0 },
-    { email: 'nadeem07381@gmail.com', name: 'Nadeem User', pass: 'Password123', role: 'USER', balance: 250.0 },
+    { email: 'abdullah231@superpanel.com', username: 'abdullah231', name: 'Abdullah231', pass: 'Abdullah@231', role: 'ADMIN', balance: 5000.0 },
+    { email: 'nadeem07381@gmail.com', username: 'nadeem07', name: 'Nadeem User', pass: 'Password123', role: 'USER', balance: 250.0 },
   ];
 
   for (const acc of defaultAccounts) {
@@ -86,16 +86,16 @@ export async function seedDatabase() {
       const uId = cryptoUUID();
       const passHash = await bcrypt.hash(acc.pass, 10);
       await pg.query(
-        `INSERT INTO "User" (id, name, email, "passwordHash", role, status, "emailVerified", "walletBalance", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, $5, 'ACTIVE', true, $6, NOW(), NOW())`,
-        [uId, acc.name, acc.email, passHash, acc.role, acc.balance]
+        `INSERT INTO "User" (id, name, username, email, "passwordHash", role, status, "emailVerified", "walletBalance", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', true, $7, NOW(), NOW())`,
+        [uId, acc.name, acc.username, acc.email, passHash, acc.role, acc.balance]
       );
     } else {
       // Update passwordHash & ensure emailVerified = true
       const passHash = await bcrypt.hash(acc.pass, 10);
       await pg.query(
-        `UPDATE "User" SET "passwordHash" = $1, "emailVerified" = true, status = 'ACTIVE' WHERE email = $2`,
-        [passHash, acc.email]
+        `UPDATE "User" SET "passwordHash" = $1, username = COALESCE(username, $2), "emailVerified" = true, status = 'ACTIVE' WHERE email = $3`,
+        [passHash, acc.username, acc.email]
       );
     }
   }

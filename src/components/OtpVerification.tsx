@@ -4,12 +4,13 @@ import { useAuth } from '../context/AuthContext';
 import { Mail, CheckCircle2, RotateCw, LogOut, Loader2, KeyRound } from 'lucide-react';
 
 export default function OtpVerification() {
-  const { pendingOtpEmail, userProfile, verifyOtp, resendOtp, refreshUserProfile, logout, addToast } = useAuth();
+  const { pendingOtpEmail, pendingOtpUsername, userProfile, verifyOtp, resendOtp, refreshUserProfile, logout, addToast } = useAuth();
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(60);
 
   const displayEmail = pendingOtpEmail || userProfile?.email || '';
+  const displayUsername = pendingOtpUsername || userProfile?.username || userProfile?.name || 'User';
 
   useEffect(() => {
     let timer: any;
@@ -65,9 +66,22 @@ export default function OtpVerification() {
           </div>
           <h1 className="text-xl font-bold text-white">Email Verification Required</h1>
           <p className="text-xs text-slate-400 leading-relaxed">
-            We sent a 6-digit verification code to{' '}
-            <span className="text-indigo-300 font-bold">{displayEmail}</span>
+            Hello <span className="text-indigo-300 font-bold">@{displayUsername}</span>, we sent a 6-digit verification code to your email.
           </p>
+        </div>
+
+        {/* Account Details badge */}
+        <div className="p-3.5 rounded-2xl bg-indigo-950/60 border border-indigo-500/30 text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Account Username:</span>
+            <span className="font-mono font-bold text-indigo-300 bg-indigo-900/70 px-2.5 py-0.5 rounded-lg border border-indigo-500/20">
+              @{displayUsername}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Registered Email:</span>
+            <span className="font-medium text-slate-200">{displayEmail}</span>
+          </div>
         </div>
 
         {/* Dev OTP Note box */}

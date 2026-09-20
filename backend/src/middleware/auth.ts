@@ -4,6 +4,7 @@ import { pg } from '../config/db';
 export interface AuthenticatedUser {
   id: string;
   name: string;
+  username?: string;
   email: string;
   role: 'USER' | 'ADMIN';
   status: 'ACTIVE' | 'SUSPENDED';
@@ -25,7 +26,7 @@ export async function authenticateSession(req: AuthRequest, res: Response, next:
     }
 
     const sessionRes = await pg.query(
-      `SELECT s.token, s."expiresAt", u.id, u.name, u.email, u.role, u.status, u."emailVerified", u."walletBalance", u."avatarUrl"
+      `SELECT s.token, s."expiresAt", u.id, u.name, u.username, u.email, u.role, u.status, u."emailVerified", u."walletBalance", u."avatarUrl"
        FROM "Session" s
        JOIN "User" u ON s."userId" = u.id
        WHERE s.token = $1 AND s."expiresAt" > NOW()`,
@@ -47,6 +48,7 @@ export async function authenticateSession(req: AuthRequest, res: Response, next:
     req.user = {
       id: row.id,
       name: row.name,
+      username: row.username || row.name,
       email: row.email,
       role: row.role as 'USER' | 'ADMIN',
       status: row.status as 'ACTIVE' | 'SUSPENDED',

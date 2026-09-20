@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Logo from '../components/Logo';
 import { useAuth } from '../context/AuthContext';
-import { User, Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from 'lucide-react';
+import { User, AtSign, Mail, Lock, ArrowRight, Loader2, Eye, EyeOff } from 'lucide-react';
 
 interface SignupProps {
   onNavigate: (route: string) => void;
@@ -10,6 +10,7 @@ interface SignupProps {
 export default function Signup({ onNavigate }: SignupProps) {
   const { signup, addToast } = useAuth();
   const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -22,6 +23,12 @@ export default function Signup({ onNavigate }: SignupProps) {
 
     if (!fullName.trim()) {
       addToast('Full Name is required', 'error');
+      return;
+    }
+
+    const cleanUsername = (username.trim() || fullName.trim().toLowerCase().replace(/\s+/g, '_')).replace(/[^a-zA-Z0-9_.-]/g, '');
+    if (cleanUsername.length < 3) {
+      addToast('Username must be at least 3 characters long', 'error');
       return;
     }
 
@@ -43,7 +50,7 @@ export default function Signup({ onNavigate }: SignupProps) {
 
     setLoading(true);
     try {
-      await signup(email.trim(), password, fullName.trim());
+      await signup(email.trim(), password, fullName.trim(), cleanUsername);
       setLoading(false);
       onNavigate('/');
     } catch (err: any) {
@@ -74,9 +81,32 @@ export default function Signup({ onNavigate }: SignupProps) {
                 type="text"
                 required
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => {
+                  setFullName(e.target.value);
+                  if (!username) {
+                    setUsername(e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_.-]/g, ''));
+                  }
+                }}
                 placeholder="Alex Johnson"
                 className="w-full pl-10 pr-4 py-3 rounded-2xl bg-slate-900 border border-indigo-900/40 text-white text-xs focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block font-bold text-slate-300">Username</label>
+              <span className="text-[10px] text-indigo-400/80 font-medium">Used for login & notifications</span>
+            </div>
+            <div className="relative">
+              <AtSign className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+              <input
+                type="text"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_.-]/g, ''))}
+                placeholder="e.g. nadeem07"
+                className="w-full pl-10 pr-4 py-3 rounded-2xl bg-slate-900 border border-indigo-900/40 text-white text-xs focus:outline-none focus:border-indigo-500 font-mono"
               />
             </div>
           </div>

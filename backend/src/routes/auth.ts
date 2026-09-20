@@ -10,10 +10,18 @@ const router = Router();
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, confirmPassword } = req.body;
+    const { name, username, email, password, confirmPassword } = req.body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: 'Name, email, and password are required.', code: 'INVALID_INPUT' });
+      return res.status(400).json({ success: false, message: 'Full name, email, and password are required.', code: 'INVALID_INPUT' });
+    }
+
+    const rawUsername = (username || name).toString().trim();
+    // Normalize username: lowercase, replace spaces with underscores, allow only letters, numbers, underscores, dots, hyphens
+    const cleanUsername = rawUsername.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_.-]/g, '');
+
+    if (cleanUsername.length < 3) {
+      return res.status(400).json({ success: false, message: 'Username must be at least 3 characters long (letters, numbers, underscores, or hyphens).', code: 'INVALID_USERNAME' });
     }
 
     if (password.length < 6) {
@@ -26,7 +34,13 @@ router.post('/register', async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Check if user exists
+    // Check if username is already taken by another email
+    const existingUsername = await pg.query('SELECT id FROM "User" WHERE LOWER(username) = $1 AND email != $2', [cleanUsername, normalizedEmail]);
+    if (existingUsername.rows.length > 0) {
+      return res.status(400).json({ success: false, message: `Username "${cleanUsername}" is already taken. Please choose another username.`, code: 'USERNAME_EXISTS' });
+    }
+
+    // Check if user exists with this email
     const existing = await pg.query('SELECT id, role, "emailVerified" FROM "User" WHERE email = $1', [normalizedEmail]);
     
     let userId: string;
@@ -38,25 +52,25 @@ router.post('/register', async (req, res) => {
         return res.status(400).json({ success: false, message: 'An account with this email address already exists. Please log in instead.', code: 'EMAIL_EXISTS' });
       }
 
-      // Existing unverified account: update password & name, re-send OTP
+      // Existing unverified account: update password, name, username, and re-send OTP
       userId = existingUser.id;
       role = existingUser.role;
       const passwordHash = await bcrypt.hash(password, 10);
 
       await pg.query(
-        `UPDATE "User" SET name = $1, "passwordHash" = $2, "updatedAt" = NOW() WHERE id = $3`,
-        [name.trim(), passwordHash, userId]
+        `UPDATE "User" SET name = $1, username = $2, "passwordHash" = $3, "updatedAt" = NOW() WHERE id = $4`,
+        [name.trim(), cleanUsername, passwordHash, userId]
       );
     } else {
       // New user registration
       const passwordHash = await bcrypt.hash(password, 10);
       userId = cryptoUUID();
-      role = (normalizedEmail === 'abdullah231@superpanel.com' || normalizedEmail === 'abdullah231' || name.trim().toLowerCase() === 'abdullah231') ? 'ADMIN' : 'USER';
+      role = (normalizedEmail === 'abdullah231@superpanel.com' || cleanUsername === 'abdullah231' || name.trim().toLowerCase() === 'abdullah231') ? 'ADMIN' : 'USER';
 
       await pg.query(
-        `INSERT INTO "User" (id, name, email, "passwordHash", role, status, "emailVerified", "walletBalance", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, $5, 'ACTIVE', false, 0, NOW(), NOW())`,
-        [userId, name.trim(), normalizedEmail, passwordHash, role]
+        `INSERT INTO "User" (id, name, username, email, "passwordHash", role, status, "emailVerified", "walletBalance", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', false, 0, NOW(), NOW())`,
+        [userId, name.trim(), cleanUsername, normalizedEmail, passwordHash, role]
       );
     }
 
@@ -89,17 +103,19 @@ router.post('/register', async (req, res) => {
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 
-    // Send email asynchronously
-    sendOtpEmail(normalizedEmail, otp).catch(e => console.error('Send OTP error:', e));
+    // Send email asynchronously with username included
+    sendOtpEmail(normalizedEmail, otp, cleanUsername).catch(e => console.error('Send OTP error:', e));
 
     return res.json({
       success: true,
       message: `Account created successfully. A 6-digit verification code was sent to ${normalizedEmail}.`,
       token: sessionToken,
       email: normalizedEmail,
+      username: cleanUsername,
       user: {
         id: userId,
         name: name.trim(),
+        username: cleanUsername,
         email: normalizedEmail,
         role,
         status: 'ACTIVE',
@@ -155,7 +171,7 @@ router.post('/verify-otp', async (req, res) => {
     await pg.query('DELETE FROM "EmailOtp" WHERE email = $1', [normalizedEmail]);
 
     // Fetch user details
-    const userRes = await pg.query('SELECT id, name, email, role, status, "emailVerified", "walletBalance", "avatarUrl" FROM "User" WHERE email = $1', [normalizedEmail]);
+    const userRes = await pg.query('SELECT id, name, username, email, role, status, "emailVerified", "walletBalance", "avatarUrl" FROM "User" WHERE email = $1', [normalizedEmail]);
     const user = userRes.rows[0] as any;
 
     // Create session
@@ -183,6 +199,7 @@ router.post('/verify-otp', async (req, res) => {
       user: {
         id: user.id,
         name: user.name,
+        username: user.username || user.name,
         email: user.email,
         role: user.role,
         status: user.status,
@@ -207,13 +224,23 @@ router.post('/resend-otp', async (req, res) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
+    // Look up user to get username
+    const userLookup = await pg.query('SELECT username, name FROM "User" WHERE email = $1', [normalizedEmail]);
+    const targetUsername = (userLookup.rows[0] as any)?.username || (userLookup.rows[0] as any)?.name || 'User';
+
     // Cooldown check (60 seconds)
     const existing = await pg.query('SELECT "createdAt" FROM "EmailOtp" WHERE email = $1', [normalizedEmail]);
     if (existing.rows.length > 0) {
       const lastCreated = new Date((existing.rows[0] as any).createdAt).getTime();
       const diffSec = (Date.now() - lastCreated) / 1000;
       if (diffSec < 60) {
-        return res.status(429).json({ success: false, message: `Please wait ${Math.ceil(60 - diffSec)} seconds before requesting a new OTP.`, code: 'COOLDOWN' });
+        return res.status(429).json({ 
+          success: false, 
+          message: `Please wait ${Math.ceil(60 - diffSec)} seconds before requesting a new OTP.`, 
+          code: 'COOLDOWN',
+          username: targetUsername,
+          email: normalizedEmail
+        });
       }
     }
 
@@ -228,9 +255,14 @@ router.post('/resend-otp', async (req, res) => {
       [cryptoUUID(), normalizedEmail, newH, expiresAt]
     );
 
-    sendOtpEmail(normalizedEmail, newOtp).catch(e => console.error('Send OTP error:', e));
+    sendOtpEmail(normalizedEmail, newOtp, targetUsername).catch(e => console.error('Send OTP error:', e));
 
-    return res.json({ success: true, message: `Fresh OTP verification code sent to ${normalizedEmail}.` });
+    return res.json({ 
+      success: true, 
+      message: `Fresh OTP verification code sent to ${normalizedEmail}.`,
+      email: normalizedEmail,
+      username: targetUsername
+    });
   } catch (err: any) {
     console.error('[Resend OTP Error]:', err);
     return res.status(500).json({ success: false, message: 'Failed to resend OTP.', code: 'SERVER_ERROR' });
@@ -249,9 +281,10 @@ router.post('/login', async (req, res) => {
     const inputStr = email.trim().toLowerCase();
 
     const userRes = await pg.query(
-      `SELECT id, name, email, "passwordHash", role, status, "emailVerified", "walletBalance", "avatarUrl" 
+      `SELECT id, name, username, email, "passwordHash", role, status, "emailVerified", "walletBalance", "avatarUrl" 
        FROM "User" 
        WHERE LOWER(email) = $1 
+          OR LOWER(username) = $1
           OR LOWER(name) = $1 
           OR LOWER(email) = $2`,
       [inputStr, inputStr.includes('@') ? inputStr : `${inputStr}@superpanel.com`]
@@ -297,6 +330,7 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         name: user.name,
+        username: user.username || user.name,
         email: user.email,
         role: user.role,
         status: user.status,
@@ -346,8 +380,9 @@ router.post('/forgot-password', async (req, res) => {
     
     // Support lookup by email address OR username
     const userRes = await pg.query(
-      `SELECT id, email, name FROM "User" 
+      `SELECT id, email, username, name FROM "User" 
        WHERE LOWER(email) = $1 
+          OR LOWER(username) = $1
           OR LOWER(name) = $1`,
       [inputStr]
     );
@@ -358,6 +393,7 @@ router.post('/forgot-password', async (req, res) => {
 
     const targetUser = userRes.rows[0] as any;
     const normalizedEmail = targetUser.email.toLowerCase();
+    const targetUsername = targetUser.username || targetUser.name || 'User';
 
     // Cooldown check (60 seconds)
     const existing = await pg.query('SELECT "createdAt" FROM "EmailOtp" WHERE email = $1', [normalizedEmail]);
@@ -370,7 +406,9 @@ router.post('/forgot-password', async (req, res) => {
           success: false, 
           message: `A verification code was recently generated. Please wait ${remainingSec} second${remainingSec > 1 ? 's' : ''} before requesting another code.`, 
           code: 'COOLDOWN',
-          remainingCooldownSec: remainingSec
+          remainingCooldownSec: remainingSec,
+          email: normalizedEmail,
+          username: targetUsername
         });
       }
     }
@@ -386,13 +424,14 @@ router.post('/forgot-password', async (req, res) => {
       [cryptoUUID(), normalizedEmail, otpH, expiresAt]
     );
 
-    // Send email via SMTP (await to capture status)
-    await sendPasswordResetOtpEmail(normalizedEmail, otp);
+    // Send email via SMTP (await to capture status) with username included
+    await sendPasswordResetOtpEmail(normalizedEmail, otp, targetUsername);
 
     return res.json({
       success: true,
       message: `Verification code sent to ${normalizedEmail}. Please check your email inbox (and spam folder).`,
-      email: normalizedEmail
+      email: normalizedEmail,
+      username: targetUsername
     });
   } catch (err: any) {
     console.error('[Forgot Password Error]:', err);

@@ -1,12 +1,131 @@
 import { PGlite } from '@electric-sql/pglite';
+import { Pool } from 'pg';
 import path from 'path';
 import fs from 'fs';
 
-const dbPath = path.join(process.cwd(), 'pgdata');
+export interface IDatabase {
+  query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }>;
+  exec(sql: string): Promise<void>;
+  waitReady?: Promise<any>;
+}
 
-let pgInstance: PGlite | null = null;
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY);
+const dbPath = process.env.PGDATA_PATH || (isServerless ? path.join('/tmp', 'pgdata') : path.join(process.cwd(), 'pgdata'));
 
-function createPgInstance(): PGlite {
+let dbAdapter: IDatabase | null = null;
+let pgliteRaw: PGlite | null = null;
+let poolRaw: Pool | null = null;
+let remoteFailed = false;
+
+function isRemoteConnection(connStr?: string): boolean {
+  if (!connStr) return false;
+  const trimmed = connStr.trim();
+  if (!trimmed.startsWith('postgresql://') && !trimmed.startsWith('postgres://')) {
+    return false;
+  }
+  const explicitPassword = process.env.SUPABASE_DB_PASSWORD || process.env.DB_PASSWORD || process.env.PGPASSWORD || "HKb.eL&oK4'V@K";
+  // If an explicit password is provided, placeholders in the URL can be overridden
+  if (explicitPassword) {
+    return true;
+  }
+  // If it contains unresolved placeholder text, do not treat as remote connection
+  if (
+    trimmed.includes('[YOUR-PASSWORD]') ||
+    trimmed.includes('[PASSWORD]') ||
+    trimmed.includes('<YOUR-PASSWORD>') ||
+    trimmed.includes('<PASSWORD>') ||
+    trimmed.includes('YOUR_PASSWORD') ||
+    trimmed.includes('password_here')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function parsePostgresConfig(rawUrl: string): {
+  user?: string;
+  password?: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  ssl?: any;
+} {
+  const isLocalhost = rawUrl.includes('localhost') || rawUrl.includes('127.0.0.1');
+  const ssl = isLocalhost ? false : { rejectUnauthorized: false };
+  const explicitPassword = process.env.SUPABASE_DB_PASSWORD || process.env.DB_PASSWORD || process.env.PGPASSWORD || "HKb.eL&oK4'V@K";
+
+  const trimmed = rawUrl.trim();
+  const protocolMatch = trimmed.match(/^postgres(?:ql)?:\/\//);
+  if (!protocolMatch) {
+    return { ssl };
+  }
+
+  const withoutProtocol = trimmed.slice(protocolMatch[0].length);
+  const lastAtIndex = withoutProtocol.lastIndexOf('@');
+  if (lastAtIndex === -1) {
+    return { ssl };
+  }
+
+  const userInfo = withoutProtocol.slice(0, lastAtIndex);
+  const hostAndDb = withoutProtocol.slice(lastAtIndex + 1);
+
+  const colonIndex = userInfo.indexOf(':');
+  const user = colonIndex !== -1 ? decodeURIComponent(userInfo.slice(0, colonIndex)) : decodeURIComponent(userInfo);
+  let password = colonIndex !== -1 ? userInfo.slice(colonIndex + 1) : '';
+
+  const isPlaceholder =
+    !password ||
+    password.includes('[YOUR-PASSWORD]') ||
+    password.includes('[PASSWORD]') ||
+    password.includes('<YOUR-PASSWORD>') ||
+    password.includes('<PASSWORD>') ||
+    password.includes('YOUR_PASSWORD') ||
+    password.includes('password_here');
+
+  if (isPlaceholder && explicitPassword) {
+    password = explicitPassword;
+  } else if (password && !isPlaceholder) {
+    if (password.includes('%')) {
+      try {
+        password = decodeURIComponent(password);
+      } catch {
+        // ignore
+      }
+    }
+  } else if (explicitPassword) {
+    password = explicitPassword;
+  }
+
+  const slashIndex = hostAndDb.indexOf('/');
+  const hostPort = slashIndex !== -1 ? hostAndDb.slice(0, slashIndex) : hostAndDb;
+  let database = slashIndex !== -1 ? hostAndDb.slice(slashIndex + 1) : 'postgres';
+  const questionIndex = database.indexOf('?');
+  if (questionIndex !== -1) {
+    database = database.slice(0, questionIndex);
+  }
+
+  let host = hostPort;
+  let port = 5432;
+  const hostPortColon = hostPort.lastIndexOf(':');
+  if (hostPortColon !== -1) {
+    host = hostPort.slice(0, hostPortColon);
+    const parsedPort = parseInt(hostPort.slice(hostPortColon + 1), 10);
+    if (!isNaN(parsedPort)) {
+      port = parsedPort;
+    }
+  }
+
+  return {
+    user,
+    password,
+    host,
+    port,
+    database,
+    ssl,
+  };
+}
+
+function createPGliteInstance(): PGlite {
   try {
     return new PGlite(dbPath);
   } catch (err) {
@@ -22,14 +141,12 @@ function createPgInstance(): PGlite {
   }
 }
 
-pgInstance = createPgInstance();
-
-export async function getPg(): Promise<PGlite> {
-  if (!pgInstance) {
-    pgInstance = createPgInstance();
+async function getLocalAdapter(): Promise<IDatabase> {
+  if (!pgliteRaw) {
+    pgliteRaw = createPGliteInstance();
   }
   try {
-    await pgInstance.waitReady;
+    await pgliteRaw.waitReady;
   } catch (err) {
     console.warn('[PostgreSQL] waitReady failed, recreating PGlite instance...', err);
     if (fs.existsSync(dbPath)) {
@@ -39,13 +156,132 @@ export async function getPg(): Promise<PGlite> {
         console.error('[PostgreSQL] Failed to clean dbPath:', e);
       }
     }
-    pgInstance = new PGlite(dbPath);
-    await pgInstance.waitReady;
+    pgliteRaw = new PGlite(dbPath);
+    await pgliteRaw.waitReady;
   }
-  return pgInstance;
+
+  return {
+    async query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }> {
+      const res = await pgliteRaw!.query<T>(sql, params);
+      return { rows: res.rows };
+    },
+    async exec(sql: string): Promise<void> {
+      await pgliteRaw!.exec(sql);
+    },
+    get waitReady() {
+      return pgliteRaw!.waitReady;
+    },
+  };
 }
 
-export const pg = new Proxy({} as PGlite, {
+async function tryGetRemotePool(connectionString: string): Promise<Pool | null> {
+  if (remoteFailed) return null;
+  if (poolRaw) return poolRaw;
+
+  try {
+    const config = parsePostgresConfig(connectionString);
+    const pool = new Pool({
+      user: config.user,
+      password: config.password,
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      ssl: config.ssl,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+
+    pool.on('error', (err) => {
+      console.warn('[PostgreSQL Pool Warning]:', err.message);
+    });
+
+    // Test with a lightweight query probe
+    const client = await pool.connect();
+    try {
+      await client.query('SELECT 1');
+    } finally {
+      client.release();
+    }
+
+    poolRaw = pool;
+    console.log('[Database] Connected to remote Supabase PostgreSQL database.');
+    return poolRaw;
+  } catch (err: any) {
+    console.warn(`[Database] Remote PostgreSQL test failed (${err.message || err}). Falling back to local embedded database.`);
+    remoteFailed = true;
+    if (poolRaw) {
+      poolRaw.end().catch(() => {});
+      poolRaw = null;
+    }
+    return null;
+  }
+}
+
+export async function getPg(): Promise<IDatabase> {
+  if (dbAdapter) {
+    return dbAdapter;
+  }
+
+  const connString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+
+  if (isRemoteConnection(connString) && !remoteFailed) {
+    const pool = await tryGetRemotePool(connString!.trim());
+    if (pool) {
+      dbAdapter = {
+        async query<T = any>(sql: string, params?: any[]): Promise<{ rows: T[] }> {
+          try {
+            const res = await pool.query(sql, params);
+            return { rows: res.rows };
+          } catch (err: any) {
+            const isAuthOrConnError =
+              err?.code === '28P01' ||
+              err?.routine === 'auth_failed' ||
+              err?.message?.includes('password authentication failed') ||
+              err?.message?.includes('connection') ||
+              err?.code === 'ECONNREFUSED';
+
+            if (isAuthOrConnError) {
+              console.warn(`[Database] Remote query failed (${err.message}). Seamlessly switching to local database.`);
+              remoteFailed = true;
+              dbAdapter = await getLocalAdapter();
+              return dbAdapter.query<T>(sql, params);
+            }
+            throw err;
+          }
+        },
+        async exec(sql: string): Promise<void> {
+          try {
+            await pool.query(sql);
+          } catch (err: any) {
+            const isAuthOrConnError =
+              err?.code === '28P01' ||
+              err?.routine === 'auth_failed' ||
+              err?.message?.includes('password authentication failed') ||
+              err?.message?.includes('connection') ||
+              err?.code === 'ECONNREFUSED';
+
+            if (isAuthOrConnError) {
+              console.warn(`[Database] Remote exec failed (${err.message}). Seamlessly switching to local database.`);
+              remoteFailed = true;
+              dbAdapter = await getLocalAdapter();
+              return dbAdapter.exec(sql);
+            }
+            throw err;
+          }
+        },
+        waitReady: Promise.resolve(),
+      };
+      return dbAdapter;
+    }
+  }
+
+  // Fallback to local / serverless PGlite
+  dbAdapter = await getLocalAdapter();
+  return dbAdapter;
+}
+
+export const pg = new Proxy({} as IDatabase, {
   get(_target, prop) {
     if (prop === 'waitReady') {
       return (async () => {
@@ -65,7 +301,9 @@ export const pg = new Proxy({} as PGlite, {
 });
 
 export async function initPostgresDatabase() {
-  console.log('[PostgreSQL] Initializing database schema...');
+  const connString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+  const isSupabase = isRemoteConnection(connString);
+  console.log(`[Database] Initializing database schema (${isSupabase ? 'Supabase PostgreSQL' : 'PGlite'})...`);
 
   try {
     const db = await getPg();
@@ -73,6 +311,7 @@ export async function initPostgresDatabase() {
       CREATE TABLE IF NOT EXISTS "User" (
         "id" TEXT PRIMARY KEY,
         "name" TEXT NOT NULL,
+        "username" TEXT,
         "email" TEXT UNIQUE NOT NULL,
         "passwordHash" TEXT NOT NULL,
         "role" TEXT NOT NULL DEFAULT 'USER',
@@ -234,6 +473,17 @@ export async function initPostgresDatabase() {
         "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Ensure username column exists and backfill
+    try {
+      await db.exec(`
+        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "username" TEXT;
+        UPDATE "User" SET "username" = LOWER(REPLACE("name", ' ', '')) WHERE "username" IS NULL OR "username" = '';
+      `);
+    } catch (migErr) {
+      console.warn('[PostgreSQL Migration Warning]:', migErr);
+    }
+
     console.log('[PostgreSQL] Database tables created/verified successfully.');
   } catch (err) {
     console.error('[PostgreSQL Schema Init Error]:', err);

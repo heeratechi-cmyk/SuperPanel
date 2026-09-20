@@ -15,6 +15,7 @@ export default function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
 
   // Form states
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [otp, setOtp] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -41,7 +42,7 @@ export default function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
     e.preventDefault();
     const targetEmail = email.trim().toLowerCase();
     if (!targetEmail) {
-      addToast('Please enter your registered email address', 'error');
+      addToast('Please enter your registered email address or username', 'error');
       return;
     }
 
@@ -60,6 +61,7 @@ export default function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
         if (data.remainingCooldownSec) {
           setResendCooldown(data.remainingCooldownSec);
           if (data.email) setEmail(data.email);
+          if (data.username) setUsername(data.username);
           setStep('OTP');
         }
         return;
@@ -67,6 +69,9 @@ export default function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
 
       if (data.email) {
         setEmail(data.email);
+      }
+      if (data.username) {
+        setUsername(data.username);
       }
       addToast(data.message || 'Verification code sent to your email!', 'success');
       setResendCooldown(60);
@@ -127,6 +132,9 @@ export default function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
         return;
       }
 
+      if (data.username) {
+        setUsername(data.username);
+      }
       addToast('New verification code sent to your email!', 'success');
       setResendCooldown(60);
       setOtp('');
@@ -204,21 +212,21 @@ export default function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
               </div>
               <h1 className="text-xl font-bold text-white">Reset Password</h1>
               <p className="text-xs text-gray-400">
-                Enter your registered email address to receive a 6-digit OTP code
+                Enter your registered email address or username to receive a 6-digit OTP code
               </p>
             </div>
 
             <form onSubmit={handleRequestOtp} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-gray-300 mb-1.5">Email Address</label>
+                <label className="block font-bold text-gray-300 mb-1.5">Email Address or Username</label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400" />
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@example.com"
+                    placeholder="name@example.com or username"
                     className="w-full pl-10 pr-4 py-3 rounded-2xl bg-slate-900 border border-purple-900/40 text-white text-xs focus:outline-none focus:border-purple-500"
                   />
                 </div>
@@ -254,8 +262,32 @@ export default function ForgotPassword({ onNavigate }: ForgotPasswordProps) {
               </div>
               <h1 className="text-xl font-bold text-white">Enter OTP Code</h1>
               <p className="text-xs text-gray-400">
-                A 6-digit code was sent to <span className="font-mono text-purple-300 font-bold">{email}</span>
+                {username ? (
+                  <>
+                    Hello <span className="font-mono text-purple-300 font-bold">@{username}</span>, a 6-digit code was sent to <span className="font-mono text-purple-300 font-bold">{email}</span>
+                  </>
+                ) : (
+                  <>
+                    A 6-digit code was sent to <span className="font-mono text-purple-300 font-bold">{email}</span>
+                  </>
+                )}
               </p>
+            </div>
+
+            {/* Account Details badge */}
+            <div className="p-3.5 rounded-2xl bg-purple-950/60 border border-purple-500/30 text-xs space-y-2">
+              {username && (
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Account Username:</span>
+                  <span className="font-mono font-bold text-purple-300 bg-purple-900/70 px-2.5 py-0.5 rounded-lg border border-purple-500/20">
+                    @{username}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-gray-400">Registered Email:</span>
+                <span className="font-medium text-gray-200">{email}</span>
+              </div>
             </div>
 
             <form onSubmit={handleVerifyOtp} className="space-y-4 text-xs">
